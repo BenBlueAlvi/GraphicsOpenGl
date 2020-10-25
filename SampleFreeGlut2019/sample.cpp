@@ -15,8 +15,6 @@
 #include <GL/glu.h>
 #include "glut.h"
 
-#include "heli.550"
-
 
 
 //	This is a sample OpenGL / GLUT program
@@ -197,15 +195,49 @@ int		Xmouse, Ymouse;			// mouse values
 float	Xrot, Yrot;				// rotation angles in degrees
 
 //Custom Display Lists
-GLuint HelicopterList;
-GLuint HelicopterBladeList;
-#define BLADE_RADIUS 1.0
-#define BLADE_WIDTH 0.4
+
+
+int	TextureMode;		
+
+struct point {
+	float x, y, z;		// coordinates
+	float nx, ny, nz;	// surface normal
+	float s, t;		// texture coords
+};
+
+int		NumLngs, NumLats;
+struct point* Pts;
+
+struct point*
+	PtsPointer(int lat, int lng)
+{
+	if (lat < 0)	lat += (NumLats - 1);
+	if (lng < 0)	lng += (NumLngs - 1);
+	if (lat > NumLats - 1)	lat -= (NumLats - 1);
+	if (lng > NumLngs - 1)	lng -= (NumLngs - 1);
+	return &Pts[NumLngs * lat + lng];
+}
+
+
+
+void
+DrawPoint(struct point* p)
+{
+	glNormal3f(p->nx, p->ny, p->nz);
+	glTexCoord2f(p->s, p->t);
+	glVertex3f(p->x, p->y, p->z);
+}
+
 
 //Animation
 float DeltaTime;
 
+
 int View;
+
+//textures
+
+GLuint MapTexture;
 
 // function prototypes:
 
@@ -243,6 +275,7 @@ void			Cross(float[3], float[3], float[3]);
 float			Dot(float [3], float [3]);
 float			Unit(float [3], float [3]);
 
+void MjbSphere(float, int, int);
 
 // main program:
 
@@ -293,7 +326,8 @@ main( int argc, char *argv[ ] )
 // do not call Display( ) from here -- let glutMainLoop( ) do it
 
 GLfloat rotation = 0;
-
+GLfloat DistortionAmt = M_PI;
+int distortionSign = 1;
 void
 Animate( )
 {
@@ -305,6 +339,16 @@ Animate( )
 	if (rotation >= 360) {
 		rotation = 0;
 	}
+
+	//01,11,10,00
+	DistortionAmt += distortionSign * DeltaTime / 10000000;
+	if (DistortionAmt >= 2 * M_PI || DistortionAmt < M_PI) {
+		distortionSign *= -1;
+	}
+	
+
+
+
 	
 	// force a call to Display( ) next time it is convenient:
 
@@ -434,38 +478,18 @@ Display( )
 	// since we are using glScalef( ), be sure normals get unitized:
 
 	glEnable( GL_NORMALIZE );
+	
 
-
+	glEnable(GL_TEXTURE_2D);
 	// draw the current object:
-
-	glColor3f(1, 1, 0);
-	glCallList(HelicopterList);
-
-	glColor3f(1, 0, 0);
-
-	glPushMatrix();
-	glTranslatef(0., 2.9, -2.);
-	glScalef(5, 5, 5);
-	glRotatef(DeltaTime, 0, 1, 0);
-	glRotatef(90, 1, 0, 0);
-	glCallList(HelicopterBladeList);
-	glPopMatrix();
-
-	glPushMatrix();
-	glTranslatef(.5, 2.5, 9.);
-	glScalef(1.5, 1.5, 1.5);
-	glRotatef(DeltaTime * 3, 1, 0, 0);
-	glRotatef(90, 0, 1, 0);
-
+	glBindTexture(GL_TEXTURE_2D, MapTexture);
+	
 	
 
-	glCallList(HelicopterBladeList);
-	glPopMatrix();
+
 	
-	glPushMatrix();
-	glTranslatef(.0, .0, -9);
-	glCallList(BoxList);
-	glPopMatrix();
+	MjbSphere(2, 100, 100);
+
 
 
 
@@ -553,6 +577,15 @@ DoDepthMenu( int id )
 
 	glutSetWindow( MainWindow );
 	glutPostRedisplay( );
+}
+
+void
+DoTextureMenu(int id)
+{
+	TextureMode = id;
+	DistortionAmt = M_PI;
+	glutSetWindow(MainWindow);
+	glutPostRedisplay();
 }
 
 
@@ -712,9 +745,11 @@ InitMenus( )
 
 	//custom menu
 
-	int viewmenu = glutCreateMenu(DoViewMenu);
-	glutAddMenuEntry("Outside", 0);
-	glutAddMenuEntry("Inside", 1);
+	int texturemenu = glutCreateMenu(DoTextureMenu);
+	glutAddMenuEntry("Off", 0);
+	glutAddMenuEntry("On", 1);
+	glutAddMenuEntry("Distorted", 2);
+
 
 	int mainmenu = glutCreateMenu( DoMainMenu );
 	glutAddSubMenu(   "Axes",          axesmenu);
@@ -735,7 +770,7 @@ InitMenus( )
 	glutAddSubMenu(   "Shadows",       shadowsmenu);
 #endif
 
-	glutAddSubMenu("View", viewmenu);
+	glutAddSubMenu("Texture", texturemenu);
 	glutAddMenuEntry( "Reset",         RESET );
 	glutAddSubMenu(   "Debug",         debugmenu);
 	glutAddMenuEntry( "Quit",          QUIT );
@@ -745,7 +780,25 @@ InitMenus( )
 	glutAttachMenu( GLUT_RIGHT_BUTTON );
 }
 
+//texture loading
+//loads a texture into "texture"
+void
+LoadTexture(GLuint* texture, char* file, int width, int height) {
+	unsigned char* t = BmpToTexture(file, &width, &height);
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+	glGenTextures(1, texture);
 
+	glBindTexture(GL_TEXTURE_2D, *texture);
+
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
+
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+
+	glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+	glTexImage2D(GL_TEXTURE_2D, 0, 3, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, t);
+}
 
 
 // initialize the glut and OpenGL libraries:
@@ -827,71 +880,15 @@ InitGraphics( )
 		fprintf( stderr, "GLEW initialized OK\n" );
 	fprintf( stderr, "Status: Using GLEW %s\n", glewGetString(GLEW_VERSION));
 #endif
+	//LOAD TEXURES
+	LoadTexture(&MapTexture, "worldtex.bmp", 1024, 512);
+
 
 }
 
 
 //---------------------------------------------------------------Custom Display Lists Here ------------------------------------------------------
-void
-initHelicoperList() {
-	HelicopterList = glGenLists(1);
-	glNewList(HelicopterList, GL_COMPILE);
-	int i;
-	struct point* p0, * p1, * p2;
-	struct tri* tp;
-	float p01[3], p02[3], n[3];
 
-	glPushMatrix();
-	glTranslatef(0., -1., 0.);
-	glRotatef(97., 0., 1., 0.);
-	glRotatef(-15., 0., 0., 1.);
-	glBegin(GL_TRIANGLES);
-	for (i = 0, tp = Helitris; i < Helintris; i++, tp++)
-	{
-		p0 = &Helipoints[tp->p0];
-		p1 = &Helipoints[tp->p1];
-		p2 = &Helipoints[tp->p2];
-
-		// fake "lighting" from above:
-
-		p01[0] = p1->x - p0->x;
-		p01[1] = p1->y - p0->y;
-		p01[2] = p1->z - p0->z;
-		p02[0] = p2->x - p0->x;
-		p02[1] = p2->y - p0->y;
-		p02[2] = p2->z - p0->z;
-		Cross(p01, p02, n);
-		Unit(n, n);
-		n[1] = fabs(n[1]);
-		n[1] += .25;
-		if (n[1] > 1.)
-			n[1] = 1.;
-		glColor3f(0., n[1], 0.);
-
-		glVertex3f(p0->x, p0->y, p0->z);
-		glVertex3f(p1->x, p1->y, p1->z);
-		glVertex3f(p2->x, p2->y, p2->z);
-	}
-	glEnd();
-	glPopMatrix();
-	glEndList();
-}
-
-void 
-initHelicopterList() {
-	HelicopterBladeList = glGenLists(1);
-	glNewList(HelicopterBladeList, GL_COMPILE);
-	glBegin(GL_TRIANGLES);
-	glVertex2f(BLADE_RADIUS, BLADE_WIDTH / 2.);
-	glVertex2f(0., 0.);
-	glVertex2f(BLADE_RADIUS, -BLADE_WIDTH / 2.);
-
-	glVertex2f(-BLADE_RADIUS, -BLADE_WIDTH / 2.);
-	glVertex2f(0., 0.);
-	glVertex2f(-BLADE_RADIUS, BLADE_WIDTH / 2.);
-	glEnd();
-	glEndList();
-}
 
 // initialize the display lists that will not change:
 // (a display list is a way to store opengl commands in
@@ -970,8 +967,6 @@ InitLists( )
 		glLineWidth( 1. );
 	glEndList( );
 
-	initHelicoperList();
-	initHelicopterList();
 }
 
 
@@ -1546,4 +1541,135 @@ Unit(float vin[3], float vout[3])
 		vout[2] = vin[2];
 	}
 	return dist;
+}
+
+
+
+void
+MjbSphere(float radius, int slices, int stacks)
+{
+	struct point top, bot;		// top, bottom points
+	struct point* p;
+
+	// set the globals:
+
+	NumLngs = slices;
+	NumLats = stacks;
+
+	if (NumLngs < 3)
+		NumLngs = 3;
+
+	if (NumLats < 3)
+		NumLats = 3;
+
+
+	// allocate the point data structure:
+
+	Pts = new struct point[NumLngs * NumLats];
+
+
+	// fill the Pts structure:
+
+	for (int ilat = 0; ilat < NumLats; ilat++)
+	{
+		float lat = -M_PI / 2. + M_PI * (float)ilat / (float)(NumLats - 1);
+		float xz = cos(lat);
+		float y = sin(lat);
+		for (int ilng = 0; ilng < NumLngs; ilng++)
+		{
+			float lng = -M_PI + 2. * M_PI * (float)ilng / (float)(NumLngs - 1);
+			float x = xz * cos(lng);
+			float z = -xz * sin(lng);
+			p = PtsPointer(ilat, ilng);
+			p->x = radius * x;
+			p->y = radius * y;
+			p->z = radius * z;
+			p->nx = x;
+			p->ny = y;
+			p->nz = z;
+			if (TextureMode == 2)
+			{
+				p->s = (lng + DistortionAmt) / (2. * DistortionAmt) ;
+				p->t = (lat + DistortionAmt / 2.) / DistortionAmt;
+			}
+			else if (TextureMode == 1)
+			{
+				p->s = (lng + M_PI) / (2. * M_PI);
+				p->t = (lat + M_PI / 2.) / M_PI;
+			}
+		}
+	}
+
+	top.x = 0.;		top.y = radius;	top.z = 0.;
+	top.nx = 0.;		top.ny = 1.;		top.nz = 0.;
+	top.s = 0.;		top.t = 1.;
+
+	bot.x = 0.;		bot.y = -radius;	bot.z = 0.;
+	bot.nx = 0.;		bot.ny = -1.;		bot.nz = 0.;
+	bot.s = 0.;		bot.t = 0.;
+
+
+	// connect the north pole to the latitude NumLats-2:
+	glColor3f(1, 0, 0);
+	glBegin(GL_QUADS);
+	for (int ilng = 0; ilng < NumLngs - 1; ilng++)
+	{
+		p = PtsPointer(NumLats - 1, ilng);
+		DrawPoint(p);
+
+		p = PtsPointer(NumLats - 2, ilng);
+		DrawPoint(p);
+
+		p = PtsPointer(NumLats - 2, ilng + 1);
+		DrawPoint(p);
+
+		p = PtsPointer(NumLats - 1, ilng + 1);
+		DrawPoint(p);
+	}
+	glEnd();
+
+	// connect the south pole to the latitude 1:
+	glColor3f(0, 1, 0);
+	glBegin(GL_QUADS);
+	for (int ilng = 0; ilng < NumLngs - 1; ilng++)
+	{
+		p = PtsPointer(0, ilng);
+		DrawPoint(p);
+
+		p = PtsPointer(0, ilng + 1);
+		DrawPoint(p);
+
+		p = PtsPointer(1, ilng + 1);
+		DrawPoint(p);
+
+		p = PtsPointer(1, ilng);
+		DrawPoint(p);
+	}
+	glEnd();
+
+
+	// connect the other 4-sided polygons:
+	glColor3f(0, 0, 1);
+	glBegin(GL_QUADS);
+	for (int ilat = 2; ilat < NumLats - 1; ilat++)
+	{
+		for (int ilng = 0; ilng < NumLngs - 1; ilng++)
+		{
+			p = PtsPointer(ilat - 1, ilng);
+			DrawPoint(p);
+
+			p = PtsPointer(ilat - 1, ilng + 1);
+			DrawPoint(p);
+
+			p = PtsPointer(ilat, ilng + 1);
+			DrawPoint(p);
+
+			p = PtsPointer(ilat, ilng);
+			DrawPoint(p);
+		}
+	}
+	glEnd();
+
+	delete[] Pts;
+	Pts = NULL;
 }
