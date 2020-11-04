@@ -197,7 +197,7 @@ float	Xrot, Yrot;				// rotation angles in degrees
 //Custom Display Lists
 
 
-int	TextureMode;		
+int	TextureMode = 1;		
 
 struct point {
 	float x, y, z;		// coordinates
@@ -218,6 +218,10 @@ struct point*
 	return &Pts[NumLngs * lat + lng];
 }
 
+bool Light1 = true;
+bool Light2 = true;
+bool Light3 = true;
+bool Freeze = false;
 
 
 void
@@ -229,8 +233,32 @@ DrawPoint(struct point* p)
 }
 
 
+float*
+Array3(float a, float b, float c)
+{
+	static float array[4];
+	array[0] = a;
+	array[1] = b;
+	array[2] = c;
+	array[3] = 1.;
+	return array;
+}
+// utility to create an array from a multiplier and an array:
+float*
+MulArray3(float factor, float array0[3])
+{
+	static float array[4];
+	array[0] = factor * array0[0];
+	array[1] = factor * array0[1];
+	array[2] = factor * array0[2];
+	array[3] = 1.;
+	return array;
+}
+
+
 //Animation
 float DeltaTime;
+
 
 
 int View;
@@ -238,6 +266,8 @@ int View;
 //textures
 
 GLuint MapTexture;
+
+float White[] = { 1, 1, 1 };
 
 // function prototypes:
 
@@ -277,6 +307,11 @@ float			Unit(float [3], float [3]);
 
 void MjbSphere(float, int, int);
 
+void SetPointLight(int ilight, float x, float y, float z, float r, float g, float b);
+
+void SetSpotLight(int ilight, float x, float y, float z, float xdir, float ydir, float zdir, float r, float g, float b);
+
+void SetMaterial(float r, float g, float b, float shininess);
 // main program:
 
 int
@@ -326,6 +361,7 @@ main( int argc, char *argv[ ] )
 // do not call Display( ) from here -- let glutMainLoop( ) do it
 
 GLfloat rotation = 0;
+
 GLfloat DistortionAmt = M_PI;
 int distortionSign = 1;
 void
@@ -334,17 +370,22 @@ Animate( )
 	// put animation stuff in here -- change some global variables
 	// for Display( ) to find:
 
-	DeltaTime = glutGet(GLUT_ELAPSED_TIME);
-	rotation += DeltaTime / 1000;
-	if (rotation >= 360) {
-		rotation = 0;
+	if (!Freeze) {
+		DeltaTime = glutGet(GLUT_ELAPSED_TIME);
+		rotation += DeltaTime / 10000000;
+		if (rotation >= 2 * M_PI) {
+			rotation = 0;
+		}
+
+
+		//01,11,10,00
+		DistortionAmt += distortionSign * DeltaTime / 10000000;
+		if (DistortionAmt >= 2 * M_PI || DistortionAmt < M_PI) {
+			distortionSign *= -1;
+		}
 	}
 
-	//01,11,10,00
-	DistortionAmt += distortionSign * DeltaTime / 10000000;
-	if (DistortionAmt >= 2 * M_PI || DistortionAmt < M_PI) {
-		distortionSign *= -1;
-	}
+	
 	
 
 
@@ -479,19 +520,70 @@ Display( )
 
 	glEnable( GL_NORMALIZE );
 	
+	
+	
+	
+	glLightModelfv(GL_LIGHT_MODEL_AMBIENT, MulArray3(.3f, White));
+	glDisable(GL_LIGHT0);
+	glDisable(GL_LIGHT1);
+	glDisable(GL_LIGHT2);
+
+	if (Light1) {
+		glEnable(GL_LIGHT0);
+		SetPointLight(GL_LIGHT0, 0, 0, 5, 1, 0, 0);
+		glPushMatrix();
+		glColor3f(1, 0, 0);
+		glTranslatef(0, 0, 5);
+		MjbSphere(0.5, 100, 100);
+		glPopMatrix();
+	}
+	
+	if (Light2) {
+		glEnable(GL_LIGHT1);
+		SetPointLight(GL_LIGHT1, 0, sin((double)(rotation)) * 5, cos((double)(rotation)) * 5, 1, 1, 1);
+		glPushMatrix();
+		glColor3f(1, 1, 1);
+		glTranslatef(0, sin((double)(rotation)) * 5, cos((double)(rotation)) * 5);
+		MjbSphere(0.5, 100, 100);
+		glPopMatrix();
+	}\
+
+	if (Light3) {
+		glEnable(GL_LIGHT2);
+		SetSpotLight(GL_LIGHT2, 2, 5, 0, 1, 0, 0, 0, 1, 0);
+		glPushMatrix();
+		glColor3f(0, 1, 0);
+		glTranslatef(2, 5, 0);
+		MjbSphere(0.5, 100, 100);
+		glPopMatrix();
+	}
+
+	
+
+	glEnable(GL_LIGHTING);
+
+	glShadeModel(GL_SMOOTH);
+	SetMaterial(0, 0, 0, 10.0);
 
 	glEnable(GL_TEXTURE_2D);
 	// draw the current object:
 	glBindTexture(GL_TEXTURE_2D, MapTexture);
-	
-	
-
-
-	
 	MjbSphere(2, 100, 100);
 
+	glDisable(GL_TEXTURE_2D);
 
+	glShadeModel(GL_FLAT);
+	SetMaterial(1, 0.0, 1, 0.0);
+	glTranslatef(5, 0, 0);
+	glCallList(BoxList);
 
+	glTranslatef(0, 5, 0);
+	glCallList(BoxList);
+
+	glTranslatef(cos((double)(rotation)) * 5, 0, sin((double)(rotation)) * 5);
+	glCallList(BoxList);
+
+	glDisable(GL_LIGHTING);
 
 
 #ifdef DEMO_Z_FIGHTING
@@ -745,10 +837,7 @@ InitMenus( )
 
 	//custom menu
 
-	int texturemenu = glutCreateMenu(DoTextureMenu);
-	glutAddMenuEntry("Off", 0);
-	glutAddMenuEntry("On", 1);
-	glutAddMenuEntry("Distorted", 2);
+
 
 
 	int mainmenu = glutCreateMenu( DoMainMenu );
@@ -770,7 +859,7 @@ InitMenus( )
 	glutAddSubMenu(   "Shadows",       shadowsmenu);
 #endif
 
-	glutAddSubMenu("Texture", texturemenu);
+
 	glutAddMenuEntry( "Reset",         RESET );
 	glutAddSubMenu(   "Debug",         debugmenu);
 	glutAddMenuEntry( "Quit",          QUIT );
@@ -796,7 +885,7 @@ LoadTexture(GLuint* texture, char* file, int width, int height) {
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 
-	glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+	glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
 	glTexImage2D(GL_TEXTURE_2D, 0, 3, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, t);
 }
 
@@ -910,7 +999,6 @@ InitLists( )
 
 		glBegin( GL_QUADS );
 
-			glColor3f( 0., 0., 1. );
 			glNormal3f( 0., 0.,  1. );
 				glVertex3f( -dx, -dy,  dz );
 				glVertex3f(  dx, -dy,  dz );
@@ -927,7 +1015,7 @@ InitLists( )
 				glTexCoord2f( 1., 0. );
 				glVertex3f(  dx, -dy, -dz );
 
-			glColor3f( 1., 0., 0. );
+			
 			glNormal3f(  1., 0., 0. );
 				glVertex3f(  dx, -dy,  dz );
 				glVertex3f(  dx, -dy, -dz );
@@ -940,7 +1028,7 @@ InitLists( )
 				glVertex3f( -dx,  dy, -dz );
 				glVertex3f( -dx, -dy, -dz );
 
-			glColor3f( 0., 1., 0. );
+			
 			glNormal3f( 0.,  1., 0. );
 				glVertex3f( -dx,  dy,  dz );
 				glVertex3f(  dx,  dy,  dz );
@@ -983,6 +1071,22 @@ Keyboard( unsigned char c, int x, int y )
 
 	switch( c )
 	{
+		case '0':
+			Light1 = !Light1;
+			break;
+
+		case '1':
+			Light2 = !Light2;
+			break;
+
+		case '2':
+			Light3 = !Light3;
+			break;
+
+		case 'f':
+			Freeze = !Freeze;
+			break;
+
 		case 'o':
 		case 'O':
 			WhichProjection = ORTHO;
@@ -1610,7 +1714,7 @@ MjbSphere(float radius, int slices, int stacks)
 
 
 	// connect the north pole to the latitude NumLats-2:
-	glColor3f(1, 0, 0);
+	
 	glBegin(GL_QUADS);
 	for (int ilng = 0; ilng < NumLngs - 1; ilng++)
 	{
@@ -1629,7 +1733,7 @@ MjbSphere(float radius, int slices, int stacks)
 	glEnd();
 
 	// connect the south pole to the latitude 1:
-	glColor3f(0, 1, 0);
+	
 	glBegin(GL_QUADS);
 	for (int ilng = 0; ilng < NumLngs - 1; ilng++)
 	{
@@ -1649,7 +1753,6 @@ MjbSphere(float radius, int slices, int stacks)
 
 
 	// connect the other 4-sided polygons:
-	glColor3f(0, 0, 1);
 	glBegin(GL_QUADS);
 	for (int ilat = 2; ilat < NumLats - 1; ilat++)
 	{
@@ -1672,4 +1775,50 @@ MjbSphere(float radius, int slices, int stacks)
 
 	delete[] Pts;
 	Pts = NULL;
+}
+
+
+void
+SetPointLight(int ilight, float x, float y, float z, float r, float g, float b)
+{
+	glLightfv(ilight, GL_POSITION, Array3(x, y, z));
+	glLightfv(ilight, GL_AMBIENT, Array3(0., 0., 0.));
+	glLightfv(ilight, GL_DIFFUSE, Array3(r, g, b));
+	glLightfv(ilight, GL_SPECULAR, Array3(r, g, b));
+	glLightf(ilight, GL_CONSTANT_ATTENUATION, 1.);
+	glLightf(ilight, GL_LINEAR_ATTENUATION, 0.);
+	glLightf(ilight, GL_QUADRATIC_ATTENUATION, 0.);
+	glEnable(ilight);
+}
+
+
+void
+SetSpotLight(int ilight, float x, float y, float z, float xdir, float ydir, float zdir, float r, float g, float b)
+{
+	glLightfv(ilight, GL_POSITION, Array3(x, y, z));
+	glLightfv(ilight, GL_SPOT_DIRECTION, Array3(xdir, ydir, zdir));
+	glLightf(ilight, GL_SPOT_EXPONENT, 1.);
+	glLightf(ilight, GL_SPOT_CUTOFF, 45.);
+	glLightfv(ilight, GL_AMBIENT, Array3(0., 0., 0.));
+	glLightfv(ilight, GL_DIFFUSE, Array3(r, g, b));
+	glLightfv(ilight, GL_SPECULAR, Array3(r, g, b));
+	glLightf(ilight, GL_CONSTANT_ATTENUATION, 1.);
+	glLightf(ilight, GL_LINEAR_ATTENUATION, 0.);
+	glLightf(ilight, GL_QUADRATIC_ATTENUATION, 0.);
+	glEnable(ilight);
+}
+
+void
+SetMaterial(float r, float g, float b, float shininess)
+{
+	glMaterialfv(GL_BACK, GL_EMISSION, Array3(0., 0., 0.));
+	glMaterialfv(GL_BACK, GL_AMBIENT, MulArray3(.4f, White));
+	glMaterialfv(GL_BACK, GL_DIFFUSE, MulArray3(1., White));
+	glMaterialfv(GL_BACK, GL_SPECULAR, Array3(0., 0., 0.));
+	glMaterialf(GL_BACK, GL_SHININESS, 2.f);
+	glMaterialfv(GL_FRONT, GL_EMISSION, Array3(0., 0., 0.));
+	glMaterialfv(GL_FRONT, GL_AMBIENT, Array3(r, g, b));
+	glMaterialfv(GL_FRONT, GL_DIFFUSE, Array3(r, g, b));
+	glMaterialfv(GL_FRONT, GL_SPECULAR, MulArray3(.8f, White));
+	glMaterialf(GL_FRONT, GL_SHININESS, shininess);
 }
