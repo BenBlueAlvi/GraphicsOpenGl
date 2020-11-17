@@ -15,6 +15,8 @@
 #include <GL/glu.h>
 #include "glut.h"
 
+#include "glslprogram.h"
+
 
 
 //	This is a sample OpenGL / GLUT program
@@ -197,7 +199,12 @@ float	Xrot, Yrot;				// rotation angles in degrees
 //Custom Display Lists
 
 
-int	TextureMode = 1;		
+int	TextureMode = 1;	
+
+bool AnimateF = true;
+bool AnimateV = true;
+
+GLSLProgram* Pattern;
 
 struct point {
 	float x, y, z;		// coordinates
@@ -360,29 +367,33 @@ main( int argc, char *argv[ ] )
 //
 // do not call Display( ) from here -- let glutMainLoop( ) do it
 
-GLfloat rotation = 0;
-
-GLfloat DistortionAmt = M_PI;
-int distortionSign = 1;
+GLfloat Time = 0;
+int TimeSign = 1;
+GLfloat lastTime = 0;
 void
 Animate( )
 {
 	// put animation stuff in here -- change some global variables
 	// for Display( ) to find:
 
+	DeltaTime = (glutGet(GLUT_ELAPSED_TIME) - lastTime) / 1000;
+	lastTime = glutGet(GLUT_ELAPSED_TIME);
+
 	if (!Freeze) {
-		DeltaTime = glutGet(GLUT_ELAPSED_TIME);
-		rotation += DeltaTime / 10000000;
-		if (rotation >= 2 * M_PI) {
-			rotation = 0;
+		
+		
+		Time += DeltaTime * TimeSign;
+		if (Time > 1) {
+			Time = 1;
+			TimeSign = -1;
+		}
+		else if (Time < 0) {
+			Time = 0;
+			TimeSign = 1;
 		}
 
 
-		//01,11,10,00
-		DistortionAmt += distortionSign * DeltaTime / 10000000;
-		if (DistortionAmt >= 2 * M_PI || DistortionAmt < M_PI) {
-			distortionSign *= -1;
-		}
+	
 	}
 
 	
@@ -523,67 +534,30 @@ Display( )
 	
 	
 	
-	glLightModelfv(GL_LIGHT_MODEL_AMBIENT, MulArray3(.3f, White));
-	glDisable(GL_LIGHT0);
-	glDisable(GL_LIGHT1);
-	glDisable(GL_LIGHT2);
-
-	if (Light1) {
-		glEnable(GL_LIGHT0);
-		SetPointLight(GL_LIGHT0, 0, 0, 5, 1, 0, 0);
-		glPushMatrix();
-		glColor3f(1, 0, 0);
-		glTranslatef(0, 0, 5);
-		MjbSphere(0.5, 100, 100);
-		glPopMatrix();
-	}
 	
-	if (Light2) {
-		glEnable(GL_LIGHT1);
-		SetPointLight(GL_LIGHT1, 0, sin((double)(rotation)) * 5, cos((double)(rotation)) * 5, 1, 1, 1);
-		glPushMatrix();
-		glColor3f(1, 1, 1);
-		glTranslatef(0, sin((double)(rotation)) * 5, cos((double)(rotation)) * 5);
-		MjbSphere(0.5, 100, 100);
-		glPopMatrix();
-	}\
-
-	if (Light3) {
-		glEnable(GL_LIGHT2);
-		SetSpotLight(GL_LIGHT2, 2, 5, 0, 1, 0, 0, 0, 1, 0);
-		glPushMatrix();
-		glColor3f(0, 1, 0);
-		glTranslatef(2, 5, 0);
-		MjbSphere(0.5, 100, 100);
-		glPopMatrix();
-	}
+	
 
 	
 
-	glEnable(GL_LIGHTING);
-
-	glShadeModel(GL_SMOOTH);
-	SetMaterial(0, 0, 0, 10.0);
+	
 
 	glEnable(GL_TEXTURE_2D);
 	// draw the current object:
+	
+
+	Pattern->Use();
+	glActiveTexture(GL_TEXTURE5);
 	glBindTexture(GL_TEXTURE_2D, MapTexture);
+	Pattern->SetUniformVariable("uTexUnit", 5);
+	if (AnimateF) Pattern->SetUniformVariable("uTimeV", Time);
+	if (AnimateV) Pattern->SetUniformVariable("uTimeF", Time);
 	MjbSphere(2, 100, 100);
+
+	Pattern->Use(0);
 
 	glDisable(GL_TEXTURE_2D);
 
-	glShadeModel(GL_FLAT);
-	SetMaterial(1, 0.0, 1, 0.0);
-	glTranslatef(5, 0, 0);
-	glCallList(BoxList);
-
-	glTranslatef(0, 5, 0);
-	glCallList(BoxList);
-
-	glTranslatef(cos((double)(rotation)) * 5, 0, sin((double)(rotation)) * 5);
-	glCallList(BoxList);
-
-	glDisable(GL_LIGHTING);
+	
 
 
 #ifdef DEMO_Z_FIGHTING
@@ -675,7 +649,7 @@ void
 DoTextureMenu(int id)
 {
 	TextureMode = id;
-	DistortionAmt = M_PI;
+	
 	glutSetWindow(MainWindow);
 	glutPostRedisplay();
 }
@@ -972,6 +946,11 @@ InitGraphics( )
 	//LOAD TEXURES
 	LoadTexture(&MapTexture, "worldtex.bmp", 1024, 512);
 
+	Pattern = new GLSLProgram();
+	bool valid = Pattern->Create("pattern.vert", "pattern.frag");
+	if (!valid) {
+		printf("Shaders Error \n");
+	}
 
 }
 
@@ -1071,16 +1050,18 @@ Keyboard( unsigned char c, int x, int y )
 
 	switch( c )
 	{
-		case '0':
-			Light1 = !Light1;
+		case 'b':
+			AnimateF = true;
+			AnimateV = true;
+			if (Freeze) Freeze = false;
 			break;
 
-		case '1':
-			Light2 = !Light2;
+		case 'F':
+			AnimateF = false;
 			break;
 
-		case '2':
-			Light3 = !Light3;
+		case 'V':
+			AnimateV = false;
 			break;
 
 		case 'f':
@@ -1691,16 +1672,11 @@ MjbSphere(float radius, int slices, int stacks)
 			p->nx = x;
 			p->ny = y;
 			p->nz = z;
-			if (TextureMode == 2)
-			{
-				p->s = (lng + DistortionAmt) / (2. * DistortionAmt) ;
-				p->t = (lat + DistortionAmt / 2.) / DistortionAmt;
-			}
-			else if (TextureMode == 1)
-			{
-				p->s = (lng + M_PI) / (2. * M_PI);
-				p->t = (lat + M_PI / 2.) / M_PI;
-			}
+			
+			
+			p->s = (lng + M_PI) / (2. * M_PI);
+			p->t = (lat + M_PI / 2.) / M_PI;
+			
 		}
 	}
 
