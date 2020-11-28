@@ -15,7 +15,7 @@
 #include <GL/glu.h>
 #include "glut.h"
 
-#include "glslprogram.h"
+
 
 
 
@@ -201,15 +201,17 @@ float	Xrot, Yrot;				// rotation angles in degrees
 
 int	TextureMode = 1;	
 
-bool AnimateF = true;
-bool AnimateV = true;
 
-GLSLProgram* Pattern;
+
 
 struct point {
 	float x, y, z;		// coordinates
 	float nx, ny, nz;	// surface normal
 	float s, t;		// texture coords
+};
+
+struct curve {
+	struct point* p1, p2, p3, p4;
 };
 
 int		NumLngs, NumLats;
@@ -230,6 +232,10 @@ bool Light2 = true;
 bool Light3 = true;
 bool Freeze = false;
 
+bool useSmooth = true;
+int lineNumber = 50;
+bool controlPoints = true;
+bool controlLines = true;
 
 void
 DrawPoint(struct point* p)
@@ -319,6 +325,8 @@ void SetPointLight(int ilight, float x, float y, float z, float r, float g, floa
 void SetSpotLight(int ilight, float x, float y, float z, float xdir, float ydir, float zdir, float r, float g, float b);
 
 void SetMaterial(float r, float g, float b, float shininess);
+
+void CatmullRomCurve(point* pts, int npts);
 // main program:
 
 int
@@ -370,6 +378,7 @@ main( int argc, char *argv[ ] )
 GLfloat Time = 0;
 int TimeSign = 1;
 GLfloat lastTime = 0;
+GLfloat AnimSpeed = 0.01;
 void
 Animate( )
 {
@@ -382,7 +391,7 @@ Animate( )
 	if (!Freeze) {
 		
 		
-		Time += DeltaTime * TimeSign;
+		Time += (DeltaTime * TimeSign) * AnimSpeed ;
 		if (Time > 1) {
 			Time = 1;
 			TimeSign = -1;
@@ -531,33 +540,56 @@ Display( )
 
 	glEnable( GL_NORMALIZE );
 	
-	
-	
-	
-	
-	
-
-	
-
-	
-
-	glEnable(GL_TEXTURE_2D);
 	// draw the current object:
 	
 
-	Pattern->Use();
-	glActiveTexture(GL_TEXTURE5);
-	glBindTexture(GL_TEXTURE_2D, MapTexture);
-	Pattern->SetUniformVariable("uTexUnit", 5);
-	if (AnimateF) Pattern->SetUniformVariable("uTimeV", Time);
-	if (AnimateV) Pattern->SetUniformVariable("uTimeF", Time);
-	MjbSphere(2, 100, 100);
-
-	Pattern->Use(0);
-
-	glDisable(GL_TEXTURE_2D);
-
+	point pts[400];
+	for (int i = 0; i < lineNumber; i++) {
+		point p;
+		float theta = (float)i +0.001;
+		float r;
+		r = cos((1 + (Time/10) * 5) * theta);
+		p.x = (cos(theta) * r);
+		p.y = (sin(theta) * r);
+		p.z = r;
+		pts[i] = p;
+		//printf("%d\n", i);
+		
+	}
+	// 1 = 2 - 3 - 4 = 5 = 6 = 7 - 8 = 9 = 10 = 11 - 12 = 13
+	glColor3f(1, 0, 0);
+	CatmullRomCurve(pts, lineNumber);
+	glRotatef(90, 0, 1, 0);
 	
+	glColor3f(0, 1, 0);
+	CatmullRomCurve(pts, lineNumber);
+	glRotatef(90, 1, 0, 0);
+	
+	glColor3f(0, 0, 1);
+	CatmullRomCurve(pts, lineNumber);
+	
+
+	point pts2[400];
+	for (int i = 0; i < lineNumber; i++) {
+		point p;
+		float theta2 = (float)i + 0.001;
+		float r2;
+		r2 = cos(theta2 + Time * 100) * 2;
+		p.x = (cos(theta2) * r2) - 2;
+		p.y = (sin(theta2) * r2);
+		p.z = r2;
+		pts2[i] = p;
+		//printf("%d\n", i);
+
+	}
+
+	glColor3f(1, 1, 1);
+	CatmullRomCurve(pts2, lineNumber);
+	glRotatef(180, 0, 1, 0);
+	CatmullRomCurve(pts2, lineNumber);
+	
+	
+
 
 
 #ifdef DEMO_Z_FIGHTING
@@ -719,6 +751,32 @@ DoViewMenu(int id)
 }
 
 
+void
+DoLineNumberMenu(int id) {
+	if (id == 0) {
+		lineNumber = 50;
+	}
+	else if (id == 1) {
+		lineNumber = 100;
+	}
+	else if (id == 2) {
+		lineNumber = 200;
+	}
+	else  if (id == 3) {
+		lineNumber = 400;
+	}
+	glutSetWindow(MainWindow);
+	glutPostRedisplay();
+}
+
+void doControlPointMenu(int id) {
+	controlPoints = id;
+}
+
+void doControlLineMenu(int id) {
+	controlLines = id;
+}
+
 // use glut to display a string of characters using a raster font:
 
 void
@@ -810,6 +868,19 @@ InitMenus( )
 	glutAddMenuEntry("On", 1);
 
 	//custom menu
+	int lineMenu = glutCreateMenu(DoLineNumberMenu);
+	glutAddMenuEntry("Low", 0);
+	glutAddMenuEntry("Medium", 1);
+	glutAddMenuEntry("High", 2);
+	glutAddMenuEntry("Very High", 3);
+
+	int controlPointMenu = glutCreateMenu(doControlPointMenu);
+	glutAddMenuEntry("Off", 0);
+	glutAddMenuEntry("On", 1);
+
+	int controlLineMenu = glutCreateMenu(doControlLineMenu);
+	glutAddMenuEntry("Off", 0);
+	glutAddMenuEntry("On", 1);
 
 
 
@@ -823,7 +894,7 @@ InitMenus( )
 #endif
 
 #ifdef DEMO_Z_FIGHTING
-	glutAddSubMenu(   "Depth Fighting",depthfightingmenu);
+	glutAddSubMenu(   "Depth Fighting",depthfightingmenu);  
 #endif
 
 	glutAddSubMenu(   "Depth Cue",     depthcuemenu);
@@ -833,6 +904,9 @@ InitMenus( )
 	glutAddSubMenu(   "Shadows",       shadowsmenu);
 #endif
 
+	glutAddSubMenu("Line Count", lineMenu);
+	glutAddSubMenu("Control Points", controlPointMenu);
+	glutAddSubMenu("Control Lines", controlLineMenu);
 
 	glutAddMenuEntry( "Reset",         RESET );
 	glutAddSubMenu(   "Debug",         debugmenu);
@@ -944,13 +1018,9 @@ InitGraphics( )
 	fprintf( stderr, "Status: Using GLEW %s\n", glewGetString(GLEW_VERSION));
 #endif
 	//LOAD TEXURES
-	LoadTexture(&MapTexture, "worldtex.bmp", 1024, 512);
+	
 
-	Pattern = new GLSLProgram();
-	bool valid = Pattern->Create("pattern.vert", "pattern.frag");
-	if (!valid) {
-		printf("Shaders Error \n");
-	}
+
 
 }
 
@@ -1051,17 +1121,16 @@ Keyboard( unsigned char c, int x, int y )
 	switch( c )
 	{
 		case 'b':
-			AnimateF = true;
-			AnimateV = true;
+			
 			if (Freeze) Freeze = false;
 			break;
 
 		case 'F':
-			AnimateF = false;
+			
 			break;
 
 		case 'V':
-			AnimateV = false;
+			
 			break;
 
 		case 'f':
@@ -1077,6 +1146,11 @@ Keyboard( unsigned char c, int x, int y )
 		case 'P':
 			WhichProjection = PERSP;
 			break;
+
+		case 's':
+			useSmooth = !useSmooth;
+			break;
+
 
 		case 'q':
 		case 'Q':
@@ -1797,4 +1871,49 @@ SetMaterial(float r, float g, float b, float shininess)
 	glMaterialfv(GL_FRONT, GL_DIFFUSE, Array3(r, g, b));
 	glMaterialfv(GL_FRONT, GL_SPECULAR, MulArray3(.8f, White));
 	glMaterialf(GL_FRONT, GL_SHININESS, shininess);
+}
+
+float CatmullRom(float v1, float v2, float v3, float v4, float t) {
+	return 0.5 * (2 * v2 + t * (-v1 + v3) + pow(t, 2) * (2 * v1 - 5 * v2 + 4 * v3 - v4) + pow(t, 3) * (-v1 + 3 * v2 - 3 * v3 + v4));
+}
+
+void 
+CatmullRomSegment(point* p1, point* p2, point* p3, point* p4) 
+{
+	if (!controlPoints) {
+		p1 = p2;
+		p4 = p3;
+	}
+	if (!controlLines) {
+		p2 = p3;
+	}
+	
+
+	glBegin(GL_LINE_STRIP);
+	if (useSmooth) {
+		for (float t = 0; t < 1; t += 0.01) {
+			point p;
+			p.x = CatmullRom(p1->x, p2->x, p3->x, p4->x, t);
+			p.y = CatmullRom(p1->y, p2->y, p3->y, p4->y, t);
+			p.z = CatmullRom(p1->z, p2->z, p3->z, p4->z, t);
+			glVertex3f(p.x, p.y, p.z);
+
+		}
+	}
+	else {
+		glVertex3f(p1->x, p1->y, p1->z);
+		glVertex3f(p2->x, p2->y, p2->z);
+		glVertex3f(p3->x, p3->y, p3->z);
+		glVertex3f(p4->x, p4->y, p4->z);
+	}
+	
+	
+	glEnd();
+}
+
+
+void CatmullRomCurve(point* pts, int npts) {
+	for (int i = 0; i < npts - 3; i++) {
+		CatmullRomSegment(&pts[i], &pts[i + 1], &pts[i + 2], &pts[i + 3]);
+	}
 }

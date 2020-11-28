@@ -125,7 +125,6 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="glslprogram.cpp" />
     <ClCompile Include="sample.cpp">
       <Optimization Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Disabled</Optimization>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -136,16 +135,7 @@
     <ClCompile Include="projectOne.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="glslprogram.h" />
     <ClInclude Include="projectOne.h" />
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="heli.550" />
-    <None Include="pattern.frag" />
-    <None Include="pattern.vert" />
-  </ItemGroup>
-  <ItemGroup>
-    <Image Include="worldtex.bmp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
